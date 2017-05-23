@@ -6,7 +6,7 @@ function errorFound(res, errorMessage) {
     res.send({success: false, message: errorMessage});
 }
 
-function parse(string) {
+function extractCardShortLinks(string) {
         // Trello URL are type of https://trello.com/b/[SHORT_LINK]]/[CARD_NAME]
         const baseTrelloUrl = 'trello.com/';
         if (string.includes(baseTrelloUrl)) {
@@ -22,13 +22,13 @@ function parse(string) {
         }
 }
 
-function extractCardShortLinks(message) {
+function findCards(message) {
 
     let shortLinks = [];
     let tail = message;
 
     while (tail !== undefined) {
-        const result = parse(tail);
+        const result = extractCardShortLinks(tail);
         if (result === undefined) {
             break;
         }
@@ -44,12 +44,7 @@ function extractCardShortLinks(message) {
     return shortLinks;
 }
 
-function pushCommit(commit, shortLink, key, token) {
-    const commitUrl = commit.links.html.href;
-    if (commitUrl === undefined) {
-        return
-    }
-
+function pushAttachement(attachmentUrl, shortLink, key, token) {
     const uri = `https://api.trello.com/1/cards/${shortLink}/attachments`
 
     const fetchCardAttchmentsOptions = {
@@ -63,7 +58,7 @@ function pushCommit(commit, shortLink, key, token) {
         method: 'POST',
         uri: uri,
         qs: { key: key, token: token },
-        body: { url: commitUrl },
+        body: { url: attachmentUrl },
         json: true 
     };
 
@@ -74,11 +69,11 @@ function pushCommit(commit, shortLink, key, token) {
                 return attachment.url;
             });
 
-            const commitUrls = attachmentUrls.filter( url => {
-                return url === commitUrl
+            const filteredAttachmentUrls = attachmentUrls.filter( url => {
+                return url === attachmentUrl
             });
 
-            if (commitUrls.length == 0) {
+            if (filteredAttachmentUrls.length == 0) {
                 rp(postCommitOptions)
                 .then(function (body) {
                     return { succeed: body }
@@ -93,52 +88,183 @@ function pushCommit(commit, shortLink, key, token) {
         });
 }
 
-function runQuery(res, commits, key, token) {
-    let body = {
-        success: [],
-        faillures: []
-    }
+function attachCommitsToCards(res, commits, key, token) {
+    // let body = {
+    //     success: [],
+    //     faillures: []
+    // }
     commits.forEach(function(commit) {
-        const shortLinks = extractCardShortLinks(commit.message);
-        shortLinks.forEach(function(shortLink) {
-            const result = pushCommit(commit, shortLink, key, token);
-            if (result !== undefined) {
-                const succeed = result.succeed
-                const failed = result.failed
+        const cards = findCards(commit.message);
+        cards.forEach(function(shortLink) {
+            const commitUrl = commit.links.html.href;
+            const result = pushAttachement(commitUrl, shortLink, key, token);
+            // if (result !== undefined) {
+            //     const succeed = result.succeed
+            //     const failed = result.failed
 
-                if (failed !== undefined) {
-                    body.faillures.push(failed)
-                } else if (succeed !== undefined) {
-                    body.success.push(succeed)
-                }
-            }
+            //     if (failed !== undefined) {
+            //         body.faillures.push(failed)
+            //     } else if (succeed !== undefined) {
+            //         body.success.push(succeed)
+            //     }
+            // }
         })
     });
-    commitsLinkingSuccessCount = body.success.length
-    commitsLinkingFaillureCount = body.faillures.length
-    commitsLinkToCardFoundCount = commitsLinkingSuccessCount + commitsLinkingFaillureCount
-    const status = `${commitsLinkToCardFoundCount} commits linked to a Trello card were found, ${commitsLinkToCardFoundCount} got successfully linked, ${commitsLinkingFaillureCount} failed` 
-    res.send({ status: status, details: body });
+    // commitsLinkingSuccessCount = body.success.length
+    // commitsLinkingFaillureCount = body.faillures.length
+    // commitsLinkToCardFoundCount = commitsLinkingSuccessCount + commitsLinkingFaillureCount
+    // const status = `${commitsLinkToCardFoundCount} commits linked to a Trello card were found, ${commitsLinkToCardFoundCount} got successfully linked, ${commitsLinkingFaillureCount} failed` 
+    // res.send({ status: status, details: body });
+    res.send({message: `${cards.length} commits got attached to Trello card`});
+}
+
+function attachPRTocards(res, cards, link, key, token) {
+    cards.forEach( shortLink => {
+        pushAttachement(link, shortLink, key, token);
+    });
+}
+
+function moveCard(res, shortLink, destinationList, key, token) {
+    const cardUri = `https://api.trello.com/1/cards/${shortLink}/`
+
+    const getCardOptions = {
+        method: 'GET',
+        uri: cardUri,
+        qs: { key: key, token: token },
+        json: true
+    };
+
+    rp(getCardOptions)
+    .then(body => {
+        const idBoard = body.idBoard;
+        const boardListUri = `https://api.trello.com/1/boards/${idBoard}/lists/`
+
+        const getBoardOptions = {
+            method: 'GET',
+            uri: boardListUri,
+            qs: { key: key, token: token },
+            json: true
+        };
+
+        rp(getBoardOptions)
+        .then(body => {
+            filteredLists = body.filter(list => {
+                return list.name === destinationList
+            });
+            if (filteredLists.length > 0) {
+                const destinationListId = filteredLists[0].id;
+
+                const cardListUri = `https://api.trello.com/1/cards/${shortLink}/idList/`
+                const putCardListOptions = {
+                    method: 'PUT',
+                    uri: cardListUri,
+                    qs: { key: key, token: token },
+                    body: { value: destinationListId},
+                    json: true
+                };
+
+                rp(putCardListOptions)
+                .then(body => {
+                    return { succeed: body }
+                })
+                .catch(err => {
+                    return { failed: err};
+                });
+            }
+        })
+        .catch(err => {
+            return { failed: err};
+        });
+    })
+    .catch(err => {
+        return { failed: err};
+    });
+}
+
+function moveCards(res, cards, state, branch, query, key, token) {
+    cards.forEach( shortLink => {
+        const destinationList = query.destListNameOpenPR_develop;
+        moveCard(res, shortLink, destinationList, key, token);
+    });
+}
+
+function processCommits(req, res) {
+    const commits = req.body.push.changes[0].commits;
+    if (commits === undefined) {
+        errorFound(res, "No commits found");
+    }
+
+    const key = req.query.key;
+    if (key === undefined) {
+        errorFound(res, "Trello API Key is needed in the query parameters");
+    }
+
+    const token = req.query.token;
+    if (token === undefined) {
+        errorFound(res, "Trello authetification Token is needed in the query parameters");
+    }
+
+    attachCommitsToCards(res, commits, key, token);
+}
+
+function processPR(req, res) {
+    const description = req.body.pullrequest.description
+    if (description === undefined) {
+        errorFound(res, "No description found in that pull request");
+    }
+
+    const link = req.body.pullrequest.links.html.href;
+    if (link === undefined) {
+        errorFound(res, "No PR link found.");
+    }
+
+    const state = req.body.pullrequest.state;
+    if (state === undefined) {
+        errorFound(res, "No state found");
+    }
+
+    const branch = req.body.pullrequest.destination.branch.name;
+    if (branch === undefined) {
+        errorFound(res, "No branch found");
+    }
+
+    const key = req.query.key;
+    if (key === undefined) {
+        errorFound(res, "Trello API Key is needed in the query parameters");
+    }
+
+    const token = req.query.token;
+    if (token === undefined) {
+        errorFound(res, "Trello authetification Token is needed in the query parameters");
+    }
+
+    const cards = findCards(description);
+    attachPRTocards(res, cards, link, key, token);
+    moveCards(res, cards, state, branch, req.query, key, token);
+
+    res.send({success: true});
 }
 
 module.exports = {
 
-    postCommits(req, res, next) {
-        const commits = req.body.push.changes[0].commits;
-        if (commits === undefined) {
-            errorFound(res, "No commits found");
-        }
+    process(req, res, next) {
+        // let activity = false;
 
-        const key = req.query.key;
-        if (key === undefined) {
-            errorFound(res, "Trello API Key is needed in the query parameters")
-        }
-
-        const token = req.query.token;
-        if (token === undefined) {
-            errorFound(res, "Trello authetification Token is needed in the query parameters")
-        }
-
-        runQuery(res, commits, key, token);
+        // [{ try: processCommits, catch: "No commits found"},
+        //  { try: processPR,      catch: "No pull request found" }]
+        // .forEach( p => {
+        //     try {
+        //         p.try(req, res);
+        //         activity = true;
+        //     } catch (err) {
+        //         console.log(p.catch);
+        //     }
+        // });
+        
+        // if (activity === false) {
+        //     errorFound(res, "Not commits neither pull request found");
+        // }
+        processPR(req, res);
     }
+    
 }

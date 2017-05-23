@@ -8,6 +8,6 @@ router.get('/', function(req, res, next) {
 });
 
 /* POST Bitbucket commit. */
-router.post('/', bitbucketController.postCommits);
+router.post('/', bitbucketController.process);
 
 module.exports = router;
