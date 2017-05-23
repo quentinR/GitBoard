@@ -1,4 +1,5 @@
 const request = require('request');
+const rp = require('request-promise');
 
 function errorFound(res, errorMessage) {
     res.statusCode = 400;
@@ -35,7 +36,7 @@ function extractCardShortLinks(message) {
         const shortLink = result.shortLink;
         tail = result.tail;
 
-        if (shortLink !== undefined) {
+        if (shortLink !== undefined && shortLinks.indexOf(shortLink) < 0) {
             shortLinks.push(shortLink);
         }
     }
@@ -49,28 +50,75 @@ function pushCommit(commit, shortLink, key, token) {
         return
     }
 
-    request.post(`https://api.trello.com/1/cards/${shortLink}/attachments?key=${key}&token=${token}`,
-    { json: { url: commitUrl } },
-    function (error, response, body) {
-        if (!error && response.statusCode == 200) {
-            console.log(body);
-        }
-    });
+    const uri = `https://api.trello.com/1/cards/${shortLink}/attachments`
+
+    const fetchCardAttchmentsOptions = {
+        method: 'GET',
+        uri: uri,
+        qs: { key: key, token: token },
+        json: true
+    };
+    
+    const postCommitOptions = {
+        method: 'POST',
+        uri: uri,
+        qs: { key: key, token: token },
+        body: { url: commitUrl },
+        json: true 
+    };
+
+    rp(fetchCardAttchmentsOptions)
+        .then(function (body){
+
+            const attachmentUrls = body.map( attachment => {
+                return attachment.url;
+            });
+
+            const commitUrls = attachmentUrls.filter( url => {
+                return url === commitUrl
+            });
+
+            if (commitUrls.length == 0) {
+                rp(postCommitOptions)
+                .then(function (body) {
+                    return { succeed: body }
+                })
+                .catch(function (err) {
+                    return { failed: err}
+                });
+            }
+        })
+        .catch(function (err) {
+            return { failed: err}
+        });
 }
 
 function runQuery(res, commits, key, token) {
-    var responseBody = []
+    let body = {
+        success: [],
+        faillures: []
+    }
     commits.forEach(function(commit) {
         const shortLinks = extractCardShortLinks(commit.message);
         shortLinks.forEach(function(shortLink) {
-            pushCommit(commit, shortLink, key, token);
+            const result = pushCommit(commit, shortLink, key, token);
+            if (result !== undefined) {
+                const succeed = result.succeed
+                const failed = result.failed
+
+                if (failed !== undefined) {
+                    body.faillures.push(failed)
+                } else if (succeed !== undefined) {
+                    body.success.push(succeed)
+                }
+            }
         })
     });
-    // if (shortLinks.length > 0) {
-        res.send({success: true});
-    // } else {
-        // res.send({success: false, message: "No Trello card short link found in the commit messages."});
-    // }
+    commitsLinkingSuccessCount = body.success.length
+    commitsLinkingFaillureCount = body.faillures.length
+    commitsLinkToCardFoundCount = commitsLinkingSuccessCount + commitsLinkingFaillureCount
+    const status = `${commitsLinkToCardFoundCount} commits linked to a Trello card were found, ${commitsLinkToCardFoundCount} got successfully linked, ${commitsLinkingFaillureCount} failed` 
+    res.send({ status: status, details: body });
 }
 
 module.exports = {
