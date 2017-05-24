@@ -182,8 +182,21 @@ function moveCard(res, shortLink, destinationList, key, token) {
 }
 
 function moveCards(res, cards, state, branch, query, key, token) {
+    let queryKeyRoot = '';
+    if (state === 'OPEN') {
+        queryKeyRoot = 'destListNameOpenPR_';
+    } else if (state === 'MERGED') {
+        queryKeyRoot = 'destListNameMergePR_';
+    } else {
+        return;
+    }
+
+    const destinationList = query[queryKeyRoot + branch];
+    if (destinationList === undefined) {
+        return;
+    }
+
     cards.forEach( shortLink => {
-        const destinationList = query.destListNameOpenPR_develop;
         moveCard(res, shortLink, destinationList, key, token);
     });
 }
