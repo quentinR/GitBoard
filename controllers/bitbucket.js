@@ -76,46 +76,27 @@ function pushAttachement(attachmentUrl, shortLink, key, token) {
             if (filteredAttachmentUrls.length == 0) {
                 rp(postCommitOptions)
                 .then(function (body) {
-                    return { succeed: body }
+                    console.log(`Successfully attached ${attachmentUrl} to https://trello.com/c/${shortLink}/`);
                 })
                 .catch(function (err) {
-                    return { failed: err}
+                    console.log(err);
                 });
             }
         })
         .catch(function (err) {
-            return { failed: err}
+            console.log(err);
         });
 }
 
 function attachCommitsToCards(res, commits, key, token) {
-    // let body = {
-    //     success: [],
-    //     faillures: []
-    // }
     commits.forEach(function(commit) {
         const cards = findCards(commit.message);
         cards.forEach(function(shortLink) {
             const commitUrl = commit.links.html.href;
-            const result = pushAttachement(commitUrl, shortLink, key, token);
-            // if (result !== undefined) {
-            //     const succeed = result.succeed
-            //     const failed = result.failed
+            pushAttachement(commitUrl, shortLink, key, token);
 
-            //     if (failed !== undefined) {
-            //         body.faillures.push(failed)
-            //     } else if (succeed !== undefined) {
-            //         body.success.push(succeed)
-            //     }
-            // }
         })
     });
-    // commitsLinkingSuccessCount = body.success.length
-    // commitsLinkingFaillureCount = body.faillures.length
-    // commitsLinkToCardFoundCount = commitsLinkingSuccessCount + commitsLinkingFaillureCount
-    // const status = `${commitsLinkToCardFoundCount} commits linked to a Trello card were found, ${commitsLinkToCardFoundCount} got successfully linked, ${commitsLinkingFaillureCount} failed` 
-    // res.send({ status: status, details: body });
-    res.send({message: `${cards.length} commits got attached to Trello card`});
 }
 
 function attachPRTocards(res, cards, link, key, token) {
@@ -154,7 +135,7 @@ function moveCard(res, shortLink, destinationList, key, token) {
             if (filteredLists.length > 0) {
                 const destinationListId = filteredLists[0].id;
 
-                const cardListUri = `https://api.trello.com/1/cards/${shortLink}/idList/`
+                const cardListUri = `https://api.trello.com/1/cards/${shortLink}/idList/`;
                 const putCardListOptions = {
                     method: 'PUT',
                     uri: cardListUri,
@@ -165,19 +146,19 @@ function moveCard(res, shortLink, destinationList, key, token) {
 
                 rp(putCardListOptions)
                 .then(body => {
-                    return { succeed: body }
+                    console.log(`Successfully moved https://trello.com/c/${shortLink}/ on ${destinationList}`);
                 })
                 .catch(err => {
-                    return { failed: err};
+                    console.log(err);
                 });
             }
         })
         .catch(err => {
-            return { failed: err};
+            console.log(err);
         });
     })
     .catch(err => {
-        return { failed: err};
+        console.log(err);
     });
 }
 
@@ -254,30 +235,23 @@ function processPR(req, res) {
     const cards = findCards(description);
     attachPRTocards(res, cards, link, key, token);
     moveCards(res, cards, state, branch, req.query, key, token);
-
-    res.send({success: true});
 }
 
 module.exports = {
 
     process(req, res, next) {
-        // let activity = false;
-
-        // [{ try: processCommits, catch: "No commits found"},
-        //  { try: processPR,      catch: "No pull request found" }]
-        // .forEach( p => {
-        //     try {
-        //         p.try(req, res);
-        //         activity = true;
-        //     } catch (err) {
-        //         console.log(p.catch);
-        //     }
-        // });
+        [{ try: processCommits, catch: "No commits found"},
+         { try: processPR,      catch: "No pull request found" }]
+        .forEach( p => {
+            try {
+                p.try(req, res);
+                activity = true;
+            } catch (err) {
+                console.log(p.catch);
+            }
+        });
         
-        // if (activity === false) {
-        //     errorFound(res, "Not commits neither pull request found");
-        // }
-        processPR(req, res);
+        res.send({success: true});
     }
     
 }
