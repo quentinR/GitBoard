@@ -1,9 +1,10 @@
 {
   "name": "commitrello",
-  "version": "0.0.0",
-  "private": true,
+  "version": "1.0.0",
+  "description": "Convinient service to attach commits and pull requests  with Trello stories, as well as moving stories to different Trello list when a pull request is open or merged. Only working with Bitbucket for now, Github coming soon.",
   "scripts": {
-    "start": "node ./bin/www"
+    "start": "node ./bin/www",
+    "dev": "./node_modules/.bin/nodemon start"
   },
   "dependencies": {
     "body-parser": "^1.18.3",
@@ -18,5 +19,7 @@
   },
   "devDependencies": {
     "nodemon": "^1.17.5"
-  }
+  },
+  "author": "Quentin Ribierre",
+  "license": "MIT"
 }
